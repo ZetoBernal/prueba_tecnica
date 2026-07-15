@@ -49,6 +49,7 @@ test/
 - No usar console.log.
 - Siempre manejar errores.
 - Crear DTOs.
+- Todo archivo debe de tener su prueba unitaria superior al 80% con JEST.
 
 ## Reglas Front
 
