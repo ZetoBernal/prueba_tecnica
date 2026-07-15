@@ -1,0 +1,776 @@
+openapi: 3.0.3
+info:
+  title: Sistema de Gestión de Tickets — API
+  description: >
+    API REST para autenticación de usuarios y gestión de tickets (CRUD, historial
+    de cambios de estado, filtros, paginación y reportes estadísticos).
+    Basada en las historias de usuario de `docs/user-stories-refined.md` y las
+    fases de `docs/work-plan.md`.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:3000/api
+    description: Entorno local de desarrollo
+
+tags:
+  - name: Auth
+    description: Registro e inicio de sesión de usuarios (HU-01, HU-02)
+  - name: Tickets
+    description: CRUD de tickets, filtros y paginación (HU-03, HU-04, HU-05, HU-06, HU-09, HU-10)
+  - name: Ticket History
+    description: Historial de cambios de estado de un ticket (HU-07, HU-08)
+  - name: Reports
+    description: Resumen estadístico por estado y prioridad (HU-11, HU-12)
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Registrar un nuevo usuario
+      description: >
+        Crea una cuenta de usuario. El correo debe ser único y la contraseña debe
+        cumplir los requisitos mínimos de seguridad (HU-01).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterUserDto"
+            examples:
+              default:
+                value:
+                  name: "Ana Pérez"
+                  email: "ana.perez@example.com"
+                  password: "Segura#123"
+                  confirmPassword: "Segura#123"
+      responses:
+        "201":
+          description: Usuario creado correctamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponseEnvelope"
+        "400":
+          description: Datos de entrada inválidos (contraseña débil, confirmación no coincide, campos faltantes)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: El correo electrónico ya está registrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Iniciar sesión
+      description: Autentica un usuario con correo y contraseña y emite un token JWT (HU-02).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginUserDto"
+            examples:
+              default:
+                value:
+                  email: "ana.perez@example.com"
+                  password: "Segura#123"
+      responses:
+        "200":
+          description: Autenticación exitosa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponseEnvelope"
+        "400":
+          description: Datos de entrada inválidos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Credenciales incorrectas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          description: Demasiados intentos de inicio de sesión (rate limit)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /tickets:
+    get:
+      tags: [Tickets]
+      summary: Listar tickets con filtros y paginación
+      description: >
+        Devuelve la lista de tickets aplicando filtros combinables y paginación
+        server-side (HU-04, HU-09, HU-10).
+      parameters:
+        - $ref: "#/components/parameters/TicketIdFilter"
+        - $ref: "#/components/parameters/TicketTitleFilter"
+        - $ref: "#/components/parameters/TicketPriorityFilter"
+        - $ref: "#/components/parameters/TicketStatusFilter"
+        - $ref: "#/components/parameters/TicketAssignedToFilter"
+        - $ref: "#/components/parameters/TicketDateFilter"
+        - $ref: "#/components/parameters/TicketChangedByFilter"
+        - $ref: "#/components/parameters/TicketIsModifiedFilter"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Lista paginada de tickets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedTicketsEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [Tickets]
+      summary: Crear un ticket
+      description: Crea un nuevo ticket con sus datos obligatorios (HU-03).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTicketDto"
+            examples:
+              default:
+                value:
+                  title: "Error al exportar reporte mensual"
+                  description: "El botón de exportar no responde en Chrome."
+                  priority: "alta"
+                  status: "abierto"
+                  assignedTo: 5
+      responses:
+        "201":
+          description: Ticket creado correctamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketEnvelope"
+        "400":
+          description: Datos de entrada inválidos (campo obligatorio faltante o enum inválido)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: El usuario indicado en `assignedTo` no existe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /tickets/{id}:
+    parameters:
+      - $ref: "#/components/parameters/TicketIdPath"
+    get:
+      tags: [Tickets]
+      summary: Obtener el detalle de un ticket
+      responses:
+        "200":
+          description: Detalle del ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Tickets]
+      summary: Actualizar un ticket
+      description: >
+        Actualiza campos del ticket (excepto `id`). Si cambia el `status`, se
+        registra automáticamente en el historial (HU-05, HU-07). Al pasar a
+        `resuelto` o `cerrado` es obligatorio incluir el motivo correspondiente.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTicketDto"
+            examples:
+              default:
+                value:
+                  status: "resuelto"
+                  resolvedReason: "Se corrigió el timeout del endpoint de exportación."
+                  modificationReason: "Actualización de estado tras validar el fix en QA."
+      responses:
+        "200":
+          description: Ticket actualizado correctamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketEnvelope"
+        "400":
+          description: >
+            Datos inválidos: transición de estado no permitida, o motivo faltante
+            al pasar a `resuelto`/`cerrado`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Tickets]
+      summary: Eliminar un ticket
+      description: Elimina permanentemente un ticket existente (HU-06).
+      responses:
+        "204":
+          description: Ticket eliminado correctamente (sin contenido)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /tickets/{id}/history:
+    parameters:
+      - $ref: "#/components/parameters/TicketIdPath"
+    get:
+      tags: [Ticket History]
+      summary: Consultar el historial de cambios de estado de un ticket
+      description: Devuelve el historial en orden cronológico (HU-08). Es de solo lectura.
+      responses:
+        "200":
+          description: Historial del ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketHistoryListEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /tickets/summary/status:
+    get:
+      tags: [Reports]
+      summary: Resumen estadístico de tickets por estado
+      description: Total de tickets agrupados por estado (HU-11).
+      responses:
+        "200":
+          description: Conteo de tickets por estado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusSummaryEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /tickets/summary/priority:
+    get:
+      tags: [Reports]
+      summary: Resumen estadístico de tickets por prioridad
+      description: Total de tickets agrupados por prioridad (HU-12).
+      responses:
+        "200":
+          description: Conteo de tickets por prioridad
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrioritySummaryEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    TicketIdPath:
+      name: id
+      in: path
+      required: true
+      description: Identificador único del ticket
+      schema:
+        type: integer
+        example: 42
+    TicketIdFilter:
+      name: id
+      in: query
+      required: false
+      description: Filtrar por id exacto de ticket
+      schema:
+        type: integer
+    TicketTitleFilter:
+      name: title
+      in: query
+      required: false
+      description: Filtrar por coincidencia parcial en el título
+      schema:
+        type: string
+    TicketPriorityFilter:
+      name: priority
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/TicketPriority"
+    TicketStatusFilter:
+      name: status
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/TicketStatus"
+    TicketAssignedToFilter:
+      name: assignedTo
+      in: query
+      required: false
+      description: Filtrar por id del usuario asignado
+      schema:
+        type: integer
+    TicketDateFilter:
+      name: date
+      in: query
+      required: false
+      description: Filtrar por fecha de creación/cambio (YYYY-MM-DD)
+      schema:
+        type: string
+        format: date
+    TicketChangedByFilter:
+      name: changedBy
+      in: query
+      required: false
+      description: Filtrar por id del usuario que realizó el último cambio de estado
+      schema:
+        type: integer
+    TicketIsModifiedFilter:
+      name: isModified
+      in: query
+      required: false
+      description: Filtrar tickets que han sido modificados
+      schema:
+        type: boolean
+    PageParam:
+      name: page
+      in: query
+      required: false
+      description: Número de página (inicia en 1)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSizeParam:
+      name: pageSize
+      in: query
+      required: false
+      description: Cantidad de items por página (personalizable por el usuario)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+
+  responses:
+    Unauthorized:
+      description: Token ausente, inválido o expirado
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotFound:
+      description: El recurso solicitado no existe
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+
+  schemas:
+    UserRole:
+      type: string
+      enum: [admin, user]
+
+    TicketPriority:
+      type: string
+      enum: [baja, media, alta, crítica]
+
+    TicketStatus:
+      type: string
+      enum: [abierto, "en progreso", resuelto, cerrado]
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 5
+        name:
+          type: string
+          example: "Ana Pérez"
+        email:
+          type: string
+          format: email
+          example: "ana.perez@example.com"
+        role:
+          $ref: "#/components/schemas/UserRole"
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, email, role, createdAt]
+
+    RegisterUserDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "Ana Pérez"
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: Mínimo 8 caracteres, al menos 1 carácter especial y 1 número.
+        confirmPassword:
+          type: string
+          format: password
+      required: [name, email, password, confirmPassword]
+
+    LoginUserDto:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+      required: [email, password]
+
+    AuthResponseData:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        token:
+          type: string
+          description: JWT firmado (también puede entregarse como cookie httpOnly).
+      required: [user, token]
+
+    TicketHistoryEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        ticketId:
+          type: integer
+        previousStatus:
+          $ref: "#/components/schemas/TicketStatus"
+        newStatus:
+          $ref: "#/components/schemas/TicketStatus"
+        reason:
+          type: string
+          nullable: true
+          description: Motivo del cambio, obligatorio al pasar a resuelto/cerrado.
+        changedBy:
+          $ref: "#/components/schemas/User"
+        date:
+          type: string
+          format: date
+        time:
+          type: string
+          example: "14:35:00"
+      required: [id, ticketId, previousStatus, newStatus, changedBy, date, time]
+
+    Ticket:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        title:
+          type: string
+          example: "Error al exportar reporte mensual"
+        description:
+          type: string
+          nullable: true
+        priority:
+          $ref: "#/components/schemas/TicketPriority"
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        assignedTo:
+          $ref: "#/components/schemas/User"
+        resolvedReason:
+          type: string
+          nullable: true
+        closedReason:
+          type: string
+          nullable: true
+        isModified:
+          type: boolean
+          default: false
+        modificationReason:
+          type: string
+          nullable: true
+        lastChangedBy:
+          $ref: "#/components/schemas/User"
+        date:
+          type: string
+          format: date
+        time:
+          type: string
+          example: "09:12:00"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - priority
+        - status
+        - assignedTo
+        - isModified
+        - date
+        - time
+        - createdAt
+        - updatedAt
+
+    CreateTicketDto:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          $ref: "#/components/schemas/TicketPriority"
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        assignedTo:
+          type: integer
+          description: Id del usuario al que se asigna el ticket.
+      required: [title, priority, status, assignedTo]
+
+    UpdateTicketDto:
+      type: object
+      description: >
+        Todos los campos son opcionales excepto que se exige `modificationReason`
+        cuando se modifica cualquier campo, y `resolvedReason`/`closedReason` al
+        transicionar a esos estados.
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          $ref: "#/components/schemas/TicketPriority"
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        assignedTo:
+          type: integer
+        resolvedReason:
+          type: string
+          description: Obligatorio si `status` cambia a `resuelto`.
+        closedReason:
+          type: string
+          description: Obligatorio si `status` cambia a `cerrado`.
+        modificationReason:
+          type: string
+          description: Motivo de la modificación, mostrado en la interfaz como "editado".
+
+    TicketQueryDto:
+      type: object
+      description: Representa los query params válidos para `GET /tickets`.
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        priority:
+          $ref: "#/components/schemas/TicketPriority"
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        assignedTo:
+          type: integer
+        date:
+          type: string
+          format: date
+        changedBy:
+          type: integer
+        isModified:
+          type: boolean
+        page:
+          type: integer
+          minimum: 1
+          default: 1
+        pageSize:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 10
+        totalItems:
+          type: integer
+          example: 42
+        totalPages:
+          type: integer
+          example: 5
+      required: [page, pageSize, totalItems, totalPages]
+
+    StatusSummaryItem:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        total:
+          type: integer
+      required: [status, total]
+
+    PrioritySummaryItem:
+      type: object
+      properties:
+        priority:
+          $ref: "#/components/schemas/TicketPriority"
+        total:
+          type: integer
+      required: [priority, total]
+
+    # --- Envelopes de respuesta uniforme { success, data, error } ---
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        data:
+          nullable: true
+          example: null
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "VALIDATION_ERROR"
+            message:
+              type: string
+              example: "El correo electrónico ya está registrado."
+          required: [code, message]
+      required: [success, error]
+
+    AuthResponseEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/AuthResponseData"
+        error:
+          nullable: true
+          example: null
+      required: [success, data]
+
+    TicketEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/Ticket"
+        error:
+          nullable: true
+          example: null
+      required: [success, data]
+
+    PaginatedTicketsEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Ticket"
+            meta:
+              $ref: "#/components/schemas/PaginationMeta"
+          required: [items, meta]
+        error:
+          nullable: true
+          example: null
+      required: [success, data]
+
+    TicketHistoryListEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TicketHistoryEntry"
+        error:
+          nullable: true
+          example: null
+      required: [success, data]
+
+    StatusSummaryEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusSummaryItem"
+        error:
+          nullable: true
+          example: null
+      required: [success, data]
+
+    PrioritySummaryEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PrioritySummaryItem"
+        error:
+          nullable: true
+          example: null
+      required: [success, data]
